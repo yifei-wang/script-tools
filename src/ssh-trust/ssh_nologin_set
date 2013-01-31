@@ -1,0 +1,162 @@
+#!/bin/sh
+#
+# This script used to make the trust in each two servers between the ip lists.
+#
+# use sshpass to transfer the password.
+#
+# install sshpass under Debian/Ubuntu Linux
+#   $ sudo apt-get install sshpass
+#
+
+SSH_PUB_KEYS_DIR="/tmp/ssh_pub_keys"
+SSH_FILE="authorized_keys"
+SSH_KNOWN_HOSTS_FILE="known_hosts"
+
+SSH_CFG="-oStrictHostKeyChecking=no"
+
+get_install_dir()
+{
+    mkdir -p $SSH_PUB_KEYS_DIR
+}
+
+clear_install_dir()
+{
+    rm -rf $SSH_PUB_KEYS_DIR
+}
+
+# get_remote_pub_key <remote_ip> <host_passwd>
+#   get the remote_ip's ssh pub keys to the build host
+get_remote_pub_key()
+{
+    if [ $# != 2 ]; then
+        return -1
+    fi
+
+    KEY_NAME="$1"
+    DEF_PASSWD="$2"
+
+    sshpass -p$DEF_PASSWD ssh $SSH_CFG root@$1 "rm -rf ~/.ssh; \
+                                    ssh-keygen -P '' -f ~/.ssh/id_rsa" >/dev/null 2>&1
+    if [ $? != 0 ]; then
+        echo "ERROR: Couldn't generate the pub key in host \"$1\"!"
+        return -1
+    fi
+
+    sshpass -p$DEF_PASSWD scp $SSH_CFG root@$1:~/.ssh/id_rsa.pub $SSH_PUB_KEYS_DIR/$KEY_NAME >/dev/null 2>&1
+    if [ $? != 0 ]; then
+        echo "ERROR: Couldn't get the pub key in host \"$1\"!"
+        return -1
+    fi
+
+    cat $SSH_PUB_KEYS_DIR/$KEY_NAME >> $SSH_PUB_KEYS_DIR/$SSH_FILE
+
+    return 0
+}
+
+# add_key_to_remote_host <remote_ip> <passwd>
+#   take the pub key to the other host
+add_key_to_remote_host()
+{
+    if [ $# != 2 ]; then
+        return -1
+    fi
+
+    sshpass -p$2 scp $SSH_CFG $SSH_PUB_KEYS_DIR/$SSH_FILE root@$1:~/.ssh >/dev/null 2>&1
+    if [ $? != 0 ]; then
+        return -1
+    fi
+
+    return 0
+}
+
+# add_keys_to_known_hosts <local_ip> <remote_ip> <passwd>
+#
+add_keys_to_known_hosts()
+{
+    if [ $# != 3 ]; then
+        return -1
+    fi
+
+    sshpass -p$3 ssh $SSH_CFG $1 "ssh $SSH_CFG $2 "exit" && exit" >/dev/null 2>&1
+    if [ $? != '0' ]; then
+        return -1
+    fi
+
+    return 0
+}
+
+main()
+{
+    if [ $# != 2 ]; then
+        echo
+        echo "Usage: `basename $0` <all_server_ip_list_file> <remote_host_passwd>"
+        echo
+        return -1
+    fi
+
+    IP_LIST=(`cat $1 | grep -v "^#"`)
+    DEF_PASSWD=$2
+
+    get_install_dir
+
+    echo
+    echo "********************* GET and ADD SSH PUB Keys **************************"
+    for ip in ${IP_LIST[@]}; do
+        get_remote_pub_key $ip $DEF_PASSWD
+        if [ $? != '0' ]; then
+            echo "ERROR: Get ssh pub key in $ip failed!"
+
+            clear_install_dir
+
+            return -1
+        fi
+
+        echo "SUCCESS: Get pub key in \"$ip\"."
+    done
+
+    echo
+
+    for ip in ${IP_LIST[@]}; do
+        add_key_to_remote_host $ip $DEF_PASSWD
+        if [ $? != '0' ]; then
+            echo "ERROR: Add ssh authorized_keys to host \"$ip\" failed!"
+
+            clear_install_dir
+
+            return -1
+        fi
+
+        echo "SUCCESS: Send authorized_keys to \"$ip\"."
+    done
+
+    clear_install_dir
+
+    sleep 1
+    echo
+    echo
+    echo "********************* SSH Login Testing **************************"
+    for ip_i in ${IP_LIST[@]}; do
+        for ip_j in ${IP_LIST[@]}; do
+            add_keys_to_known_hosts $ip_i $ip_j $DEF_PASSWD
+            if [ $? != '0' ]; then
+                echo
+                echo "WARNING: From \"$ip_i\" to \"$ip_j\" failed!"
+                echo
+                continue
+            fi
+
+            echo "SUCCESS: From \"$ip_i\" to \"$ip_j\""
+        done
+
+        echo
+    done
+
+    # for ip_i in ${IP_LIST[@]}; do
+    #     add_keys_to_known_hosts $IP_LIST[0] $ip $DEF_PASSWD
+    # done
+
+    return 0
+}
+
+main $1 $2
+

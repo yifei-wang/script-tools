@@ -1,0 +1,25 @@
+#!/bin/sh
+#
+# use the sshpass to transfer the password.
+# install sshpass under Debian/Ubuntu Linux
+#   $ sudo apt-get install sshpass
+#
+# Yifei Wang <yifei-wang@outlook.com>
+#
+
+if [ $# != 3 ]; then
+    echo
+    echo "Usage: `basename $0` <ip_list> <commands> <remote_host_passwd>"
+    echo
+    exit
+fi
+
+SSH_CFG="-oStrictHostKeyChecking=no"
+
+IPS=$1
+CMD=$2 
+PASSWD=$3
+
+for ip in `cat $IPS | grep -v "^#"`; do
+    sshpass -p$PASSWD ssh $SSH_CFG  $ip "$CMD" &
+done

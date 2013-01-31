@@ -1,0 +1,29 @@
+#!/bin/sh
+#
+# use the sshpass to transfer the password.
+# install sshpass under Debian/Ubuntu Linux
+#   $ sudo apt-get install sshpass
+#
+# Yifei Wang <yifei-wang@outlook.com>
+#
+
+if [ $# != 4 ]; then
+    echo
+    echo "Usage: `basename $0` <file_to_send> <ip_list> <path_to_save> <remote_host_passwd>"
+    echo
+    exit
+fi
+
+SSH_CFG="-oStrictHostKeyChecking=no"
+
+FILES=$1 
+IPS=$2
+SAVE_PATH=$3
+PASSWD=$4
+
+for ip in `cat $IPS | grep -v "^#"`; do
+    sshpass -p$PASSWD scp $SSH_CFG $FILES root@$ip:$SAVE_PATH >/dev/null 2>&1 && \
+    echo "SUCCEED: Send \"$FILES\" To Host \"$ip\"" ||
+    echo "WARNING: Send \"$FILES\" To Host \"$ip\" Failed!"
+    echo 
+done
